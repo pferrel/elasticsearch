@@ -34,6 +34,7 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.index.engine.Engine;
 import org.elasticsearch.index.settings.IndexSettings;
 import org.elasticsearch.index.shard.IndexShardException;
+import org.elasticsearch.index.shard.IndexShardState;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.index.shard.service.IndexShard;
 import org.elasticsearch.index.shard.service.InternalIndexShard;
@@ -47,6 +48,7 @@ import org.elasticsearch.test.ElasticsearchIntegrationTest;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.util.EnumSet;
 import java.util.Random;
 
 public class MockFSDirectoryService extends FsDirectoryService {
@@ -68,20 +70,28 @@ public class MockFSDirectoryService extends FsDirectoryService {
         if (checkIndexOnClose) {
             final IndicesLifecycle.Listener listener = new IndicesLifecycle.Listener() {
 
+                final EnumSet<IndexShardState> flushableStates = EnumSet.of(
+                        IndexShardState.STARTED, IndexShardState.RELOCATED , IndexShardState.POST_RECOVERY
+                );
+
                 @Override
                 public void beforeIndexShardClosed(ShardId sid, @Nullable IndexShard indexShard) {
-                    if (shardId.equals(sid) && indexShard != null) {
-                        indexShard.flush(
-                                new Engine.Flush()
-                                        .type(Engine.Flush.Type.COMMIT) // Keep translog for tests that rely on replaying translog
-                                        .waitIfOngoing(true)
-                        );
+                    if (indexShard != null && shardId.equals(sid)) {
+                        logger.info("Shard state before potentially flushing is {}", indexShard);
+                        if (flushableStates.contains(indexShard.state())) {
+                            indexShard.flush(
+                                    new Engine.Flush()
+                                            .type(Engine.Flush.Type.COMMIT) // Keep translog for tests that rely on replaying translog
+                                            .waitIfOngoing(true)
+                            );
+                        }
                     }
                 }
 
                 @Override
                 public void afterIndexShardClosed(ShardId sid, @Nullable IndexShard indexShard) {
                     if (shardId.equals(sid) && indexShard != null) {
+                        assert indexShard.state() == IndexShardState.CLOSED;
                         checkIndex(((InternalIndexShard) indexShard).store(), sid);
                     }
                     service.indicesLifecycle().removeListener(this);
