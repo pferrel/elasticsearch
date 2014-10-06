@@ -77,7 +77,7 @@ public class MockFSDirectoryService extends FsDirectoryService {
                 @Override
                 public void beforeIndexShardClosed(ShardId sid, @Nullable IndexShard indexShard) {
                     if (indexShard != null && shardId.equals(sid)) {
-                        logger.info("Shard state before potentially flushing is {}", indexShard);
+                        logger.info("Shard state before potentially flushing is {}", indexShard.state());
                         if (flushableStates.contains(indexShard.state())) {
                             indexShard.flush(
                                     new Engine.Flush()
