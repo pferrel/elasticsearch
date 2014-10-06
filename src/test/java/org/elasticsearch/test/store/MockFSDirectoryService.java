@@ -70,15 +70,18 @@ public class MockFSDirectoryService extends FsDirectoryService {
         if (checkIndexOnClose) {
             final IndicesLifecycle.Listener listener = new IndicesLifecycle.Listener() {
 
-                final EnumSet<IndexShardState> flushableStates = EnumSet.of(
+                final EnumSet<IndexShardState> validStates = EnumSet.of(
                         IndexShardState.STARTED, IndexShardState.RELOCATED , IndexShardState.POST_RECOVERY
                 );
+
+                boolean canRun = false;
 
                 @Override
                 public void beforeIndexShardClosed(ShardId sid, @Nullable IndexShard indexShard) {
                     if (indexShard != null && shardId.equals(sid)) {
                         logger.info("Shard state before potentially flushing is {}", indexShard.state());
-                        if (flushableStates.contains(indexShard.state())) {
+                        if (validStates.contains(indexShard.state())) {
+                            canRun = true;
                             indexShard.flush(
                                     new Engine.Flush()
                                             .type(Engine.Flush.Type.COMMIT) // Keep translog for tests that rely on replaying translog
@@ -90,8 +93,8 @@ public class MockFSDirectoryService extends FsDirectoryService {
 
                 @Override
                 public void afterIndexShardClosed(ShardId sid, @Nullable IndexShard indexShard) {
-                    if (shardId.equals(sid) && indexShard != null) {
-                        assert indexShard.state() == IndexShardState.CLOSED;
+                    if (shardId.equals(sid) && indexShard != null && canRun) {
+                        assert indexShard.state() == IndexShardState.CLOSED : "Current state must be closed";
                         checkIndex(((InternalIndexShard) indexShard).store(), sid);
                     }
                     service.indicesLifecycle().removeListener(this);
